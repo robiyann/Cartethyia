@@ -27,6 +27,7 @@ import { Select } from "../components/ui/select";
 import { Toolbar } from "../components/ui/toolbar";
 import { Stack } from "../components/ui/stack";
 import { toast } from "../lib/toast";
+import { useRuntimeSettings, useUpdateRuntimeSettings } from "../lib/hooks/settings";
 import {
   useQuotaOverview,
   useRefreshAccountQuota,
@@ -690,8 +691,12 @@ export default function Quota(): ReactNode {
   const [providerFilter, setProviderFilter] = useState("all");
   const [accountFilter, setAccountFilter] = useState("all");
   const [expiringFirst, setExpiringFirst] = useState(false);
+  const runtimeSettingsQuery = useRuntimeSettings();
+  const updateRuntimeSettings = useUpdateRuntimeSettings();
+  const quotaTrackerEnabled = runtimeSettingsQuery.data?.quotaTrackerEnabled !== false;
+
   const { data, isLoading, isError, error, isFetching, dataUpdatedAt, refetch } =
-    useQuotaOverview();
+    useQuotaOverview({ enabled: quotaTrackerEnabled });
   const providers = useMemo(
     () =>
       [...(data?.providers ?? [])].sort((left, right) =>
@@ -775,6 +780,36 @@ export default function Quota(): ReactNode {
   return (
     <Stack gap="16px" className="dashboard-page" style={{ minHeight: 0, flex: 1 }}>
       <Toolbar className="page-toolbar-sticky">
+        <Inline gap="8px" align="center" style={{ marginRight: "4px", paddingRight: "10px", borderRight: "1px solid var(--border, rgba(255,255,255,0.08))" }}>
+          <span style={{ fontSize: "11px", fontWeight: 500, color: "var(--text-secondary)" }}>
+            Quota Tracker
+          </span>
+          <Switch
+            checked={quotaTrackerEnabled}
+            disabled={updateRuntimeSettings.isPending || runtimeSettingsQuery.isLoading}
+            onChange={(checked: boolean) => {
+              updateRuntimeSettings.mutate(
+                { quotaTrackerEnabled: checked },
+                {
+                  onSuccess: () => {
+                    toast.success(
+                      checked
+                        ? "Quota Tracker enabled. Live quota refresh and sweeps active."
+                        : "Quota Tracker disabled. Background sweeps and polling paused.",
+                    );
+                  },
+                  onError: (err) => {
+                    toast.error(getErrorMessage(err, "Failed to toggle Quota Tracker"));
+                  },
+                },
+              );
+            }}
+            aria-label="Toggle Quota Tracker"
+          />
+          <Badge tone={quotaTrackerEnabled ? "ok" : "disabled"}>
+            {quotaTrackerEnabled ? "ON" : "OFF"}
+          </Badge>
+        </Inline>
         <SlidersHorizontal
           size={14}
           className="mx-1 text-[var(--text-tertiary)]"
@@ -842,21 +877,23 @@ export default function Quota(): ReactNode {
             alignItems: "center",
             gap: "6px",
             fontSize: "10.5px",
-            color: "var(--text-tertiary)",
+            color: quotaTrackerEnabled ? "var(--text-tertiary)" : "var(--yellow, #eab308)",
           }}
         >
-          {refreshingCount > 0
-            ? `Refreshing ${refreshingCount} account${refreshingCount === 1 ? "" : "s"}…`
-            : `Auto-refresh (60s) · updated ${lastUpdated}`}{" "}
+          {!quotaTrackerEnabled
+            ? "Tracker OFF · Sweeps paused"
+            : refreshingCount > 0
+              ? `Refreshing ${refreshingCount} account${refreshingCount === 1 ? "" : "s"}…`
+              : `Auto-refresh (60s) · updated ${lastUpdated}`}{" "}
           · {filteredAccounts.length} shown
         </span>
         <Button
           variant="ghost"
           size="icon"
           className="size-8"
-          title="Queue quota refresh"
+          title={quotaTrackerEnabled ? "Queue quota refresh" : "Quota Tracker is disabled (turn ON to refresh)"}
           aria-label="Queue quota refresh"
-          disabled={isFetching || refreshAll.isPending || accounts.length === 0}
+          disabled={!quotaTrackerEnabled || isFetching || refreshAll.isPending || accounts.length === 0}
           onClick={() =>
             refreshAll.mutate(
               accounts.map((account) => account.id),

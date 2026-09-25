@@ -22,6 +22,7 @@ import {
 } from "../console/quota/quota-refresh";
 import { getCachedQuotaEntries, type CachedQuotaEntry } from "../console/quota/quota-cache";
 import { runGrowingWaves } from "./tasks";
+import { consoleSettings } from "../persistence/schema";
 import type { ProviderId } from "../providers/provider-registry";
 import {
   attemptDailyGrowthPass,
@@ -31,6 +32,8 @@ import {
 } from "./daily-checkin";
 
 export interface QuotaRefreshSweepDeps extends QuotaRefreshDeps {
+  /** Optional override to check if quota tracker is enabled. */
+  readonly isQuotaTrackerEnabled?: () => Promise<boolean> | boolean;
   /** Lists OAuth accounts to consider; the default excludes API-key accounts. */
   readonly listTargets?: () => Promise<readonly QuotaRefreshTarget[]>;
   /** Maximum accounts in one completed wave. Defaults to 5. */
@@ -198,6 +201,27 @@ const DEFAULT_PASS_BUDGET_MS = 90_000;
  * wave does not start until the previous wave has fully settled.
  */
 export async function quotaRefreshSweep(deps: QuotaRefreshSweepDeps): Promise<void> {
+  if (deps.isQuotaTrackerEnabled) {
+    const enabled = await deps.isQuotaTrackerEnabled();
+    if (!enabled) return;
+  } else if (deps.db && typeof (deps.db as any).select === "function") {
+    try {
+      const query = (deps.db as any).select().from(consoleSettings).limit(1);
+      if (query && typeof query.then === "function") {
+        const settingsRows = await query;
+        if (
+          Array.isArray(settingsRows) &&
+          settingsRows.length > 0 &&
+          settingsRows[0]?.preferences?.quotaTrackerEnabled === false
+        ) {
+          return;
+        }
+      }
+    } catch {
+      // Proceed if mock or table unavailable
+    }
+  }
+
   const now = deps.now ?? Date.now;
   const minAgeMs = deps.minAgeMs ?? DEFAULT_MIN_AGE_MS;
   const maxPerPass = Math.max(1, deps.maxPerPass ?? DEFAULT_MAX_PER_PASS);

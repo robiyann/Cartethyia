@@ -1,5 +1,7 @@
-import { Eye, Shield } from "lucide-react";
+import { Eye, Shield, Gauge } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Switch } from "../components/ui/switch";
+import { Badge } from "../components/ui/badge";
 import { Select } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -170,6 +172,73 @@ function PasswordChangeForm(): ReactNode {
   );
 }
 
+function QuotaSettingsPanel(): ReactNode {
+  const query = useRuntimeSettings();
+  const mutation = useUpdateRuntimeSettings();
+  const settings = query.data;
+  if (query.isPending) return <LoadingState label="Loading quota settings…" />;
+  if (query.isError || !settings) {
+    return (
+      <ErrorState
+        message={getErrorMessage(query.error, "Failed to load runtime settings")}
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const isEnabled = settings.quotaTrackerEnabled !== false;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Quota Tracker"
+        subtitle="Manage upstream quota polling and background sweeps"
+        icon={<Gauge size={16} />}
+      />
+      <CardBody>
+        <Stack gap="14px">
+          <Inline justify="space-between" align="center">
+            <div>
+              <Inline gap="8px" align="center">
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text)" }}>
+                  Quota Tracker Feature
+                </span>
+                <Badge tone={isEnabled ? "ok" : "disabled"}>
+                  {isEnabled ? "Enabled" : "Disabled"}
+                </Badge>
+              </Inline>
+              <p style={{ fontSize: "11px", color: "var(--text-tertiary)", marginTop: "4px" }}>
+                When enabled, Cartethyia periodically sweeps provider quotas and updates window limits. Turn OFF to prevent automated outbound RPC polling (anti-abuse safety).
+              </p>
+            </div>
+            <Switch
+              checked={isEnabled}
+              disabled={mutation.isPending}
+              onChange={(checked) =>
+                mutation.mutate(
+                  { quotaTrackerEnabled: checked },
+                  {
+                    onSuccess: () => {
+                      toast.success(
+                        checked
+                          ? "Quota Tracker enabled. Sweeps active."
+                          : "Quota Tracker disabled. Sweeps paused.",
+                      );
+                    },
+                    onError: (error) =>
+                      toast.error(getErrorMessage(error, "Could not update quota tracker setting.")),
+                  },
+                )
+              }
+              aria-label="Toggle Quota Tracker"
+            />
+          </Inline>
+        </Stack>
+      </CardBody>
+    </Card>
+  );
+}
+
 export default function Settings(): ReactNode {
   return (
     <div className="two-column-grid">
@@ -184,6 +253,9 @@ export default function Settings(): ReactNode {
           <PasswordChangeForm />
         </CardBody>
       </Card>
+
+      {/* Quota Tracker Settings */}
+      <QuotaSettingsPanel />
 
       {/* Privacy */}
       <PrivacyPanel />

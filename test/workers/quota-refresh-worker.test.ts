@@ -496,4 +496,24 @@ describe("quota refresh sweep", () => {
       .find((msg) => msg.includes("workbuddy/s@example.com"));
     expect(line).toBeDefined();
   });
+
+  test("skips the entire sweep when quota tracker is disabled", async () => {
+    clearConsoleLogs();
+    const redis = fakeRedis();
+    const ok: ProviderQuotaResult = { source: "test", plan: null, windows: [], error: null };
+    let listCalls = 0;
+    await quotaRefreshSweep({
+      db: {} as never,
+      redis,
+      isQuotaTrackerEnabled: () => false,
+      providerRegistry: stubRegistry(ok, { calls: 0 }),
+      resolveCredential: async () => "secret",
+      listTargets: async () => {
+        listCalls += 1;
+        return [{ accountId: "acct-disabled", providerId: "test", tenantId: "t", label: "off@example.com" }];
+      },
+    });
+
+    expect(listCalls).toBe(0);
+  });
 });

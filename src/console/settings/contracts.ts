@@ -13,6 +13,7 @@ export interface RuntimeSettingsResponse {
 
   readonly tenantConcurrencyLimit: number | null;
   readonly thinkingNormalizationEnabled: boolean;
+  readonly quotaTrackerEnabled: boolean;
   readonly responsesReasoningSummary: ResponsesReasoningSummary;
   readonly telemetryPayloads: TelemetryPayloadMode;
   readonly privacyMode: PrivacyMode;
@@ -113,6 +114,7 @@ const runtimeUpdateBody = t.Object({
   privacyMode: t.Optional(literalUnion(PRIVACY_MODES)),
   tenantConcurrencyLimit: t.Optional(t.Union([t.Null(), t.Number()])),
   thinkingNormalizationEnabled: t.Optional(t.Boolean()),
+  quotaTrackerEnabled: t.Optional(t.Boolean()),
 });
 
 export function createRuntimeSettingsRoutes(config: RuntimeSettingsConfig): Elysia {

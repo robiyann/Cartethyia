@@ -27,6 +27,7 @@ function mapRuntimeSettingsRow(row: typeof consoleSettings.$inferSelect | undefi
     redisModeActual: resolveRedisMode(),
     tenantConcurrencyLimit: prefs.tenantConcurrencyLimit ?? null,
     thinkingNormalizationEnabled: prefs.thinkingNormalizationEnabled === true,
+    quotaTrackerEnabled: prefs.quotaTrackerEnabled !== false,
     responsesReasoningSummary: isResponsesReasoningSummary(prefs.responsesReasoningSummary)
       ? prefs.responsesReasoningSummary
       : "detailed",
@@ -67,6 +68,8 @@ export class DrizzleRuntimeSettingsStore implements RuntimeSettingsStore {
       patchPrefs.tenantConcurrencyLimit = patch.tenantConcurrencyLimit;
     if (patch.thinkingNormalizationEnabled !== undefined)
       patchPrefs.thinkingNormalizationEnabled = patch.thinkingNormalizationEnabled;
+    if (patch.quotaTrackerEnabled !== undefined)
+      patchPrefs.quotaTrackerEnabled = patch.quotaTrackerEnabled;
     if (patch.responsesReasoningSummary !== undefined)
       patchPrefs.responsesReasoningSummary = patch.responsesReasoningSummary;
     if (patch.telemetryPayloads !== undefined) patchPrefs.telemetryPayloads = patch.telemetryPayloads;

@@ -90,17 +90,20 @@ export async function fetchQuotaOverview(signal?: AbortSignal): Promise<QuotaOve
 export function useQuotaOverview(options?: {
   readonly refreshingMs?: number;
   readonly idleMs?: number;
+  readonly enabled?: boolean;
 }) {
   const refreshingMs = options?.refreshingMs ?? 2_000;
   const idleMs = options?.idleMs ?? 60_000;
+  const isEnabled = options?.enabled ?? true;
   return useQuery<QuotaOverview>({
     queryKey: queryKeys.quota.all,
     queryFn: (context) => fetchQuotaOverview(querySignal(context)),
     staleTime: 0,
-    refetchInterval: (query) => ((query.state.data?.refreshing ?? 0) > 0 ? refreshingMs : idleMs),
+    refetchInterval: (query) =>
+      !isEnabled ? false : (query.state.data?.refreshing ?? 0) > 0 ? refreshingMs : idleMs,
     refetchIntervalInBackground: false,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: isEnabled,
     placeholderData: (previous) => previous,
   });
 }

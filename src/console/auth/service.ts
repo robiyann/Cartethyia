@@ -187,7 +187,8 @@ export interface SessionCookiePolicy {
 const SESSION_MAX_AGE_SECONDS = 48 * 60 * 60;
 
 function shouldUseSecureSessionCookie(): boolean {
-  if (process.env.NODE_ENV === "production") return true;
+  if (process.env.CARTETHYIA_COOKIE_SECURE === "false") return false;
+  if (process.env.CARTETHYIA_COOKIE_SECURE === "true") return true;
   return process.env.CARTETHYIA_PUBLIC_ORIGIN?.startsWith("https://") === true;
 }
 

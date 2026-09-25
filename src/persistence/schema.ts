@@ -617,6 +617,8 @@ export interface ConsoleSettingsPreferences {
   tenantConcurrencyLimit?: number | null;
   /** Normalizes provider-native thinking config for non-user final turns. */
   thinkingNormalizationEnabled?: boolean;
+  /** Toggles periodic quota sweeps and active upstream quota tracking. */
+  quotaTrackerEnabled?: boolean;
   responsesReasoningSummary?: "auto" | "concise" | "detailed";
   telemetryPayloads?: "bounded" | "none";
   privacyMode?: "masked" | "full";
