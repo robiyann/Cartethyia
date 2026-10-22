@@ -170,7 +170,7 @@ describe("CodeBuddy adapter contracts", () => {
     expect(seenHeaders.get("x-ide-type")).toBe("IDE");
     expect(body.stream).toBe(true);
     expect(body.messages).toEqual([
-      { role: "system", content: "You are CodeBuddy Code." },
+      { role: "system", content: "You are an AI agent with orchestration capabilities." },
       { role: "user", content: [{ type: "text", text: "hello" }] },
     ]);
     expect(events.at(-1)).toMatchObject({ type: "terminal", state: "complete" });
@@ -286,7 +286,7 @@ describe("CodeBuddy adapter contracts", () => {
     }
 
     expect(body.messages).toEqual([
-      { role: "system", content: "You are CodeBuddy Code." },
+      { role: "system", content: "sys" },
       {
         role: "user",
         content: [image, { type: "text", text: "coba liat ini" }],

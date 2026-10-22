@@ -120,12 +120,19 @@ export interface ComboDefinition {
   readonly strategy: ComboStrategy;
 }
 
+export interface AliasSubstrateConfig {
+  readonly systemPrompt: string;
+  readonly promptStrategy?: "prepend" | "override";
+}
+
 export interface RouteSnapshot {
   readonly revision: RoutingRevision;
   readonly candidates: readonly RouteCandidate[];
   readonly aliases: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** CLI source→target mappings, enabled only for API keys with the feature scope. */
   readonly cli_aliases?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /** Substrate/system prompt injection configs attached to tenant model aliases. */
+  readonly alias_substrates?: Readonly<Record<string, Readonly<Record<string, AliasSubstrateConfig>>>>;
   readonly combos: Readonly<Record<string, Readonly<Record<string, ComboDefinition>>>>;
   readonly created_at: number;
   /** Optional per-provider routing preferences keyed by tenant. */
@@ -320,6 +327,7 @@ export class InMemoryRouteSnapshotService implements RouteSnapshotService {
       candidates: Object.freeze([...built.candidates]) as readonly RouteCandidate[],
       aliases: Object.freeze({ ...built.aliases }),
       ...(built.cli_aliases ? { cli_aliases: Object.freeze({ ...built.cli_aliases }) } : {}),
+      ...(built.alias_substrates ? { alias_substrates: Object.freeze({ ...built.alias_substrates }) } : {}),
       combos: Object.freeze({ ...built.combos }),
       ...(providerRouting ? { providerRouting } : {}),
       // Unfrozen copy: deepFreeze must reach the inner per-tenant settings —

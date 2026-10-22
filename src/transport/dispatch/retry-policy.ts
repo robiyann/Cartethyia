@@ -41,8 +41,10 @@ export function isOAuthCredentialInvalidated(error: unknown): error is GatewayEr
 export function shouldCooldownPool(error: unknown): error is GatewayError {
   return (
     error instanceof GatewayError &&
-    error.origin === "upstream" &&
-    error.status === 429 &&
-    error.details.rateLimitScope === "provider"
+    ((error.origin === "upstream" && error.status === 429) ||
+      error.origin === "network" ||
+      error.status === 502 ||
+      error.status === 503 ||
+      error.status === 504)
   );
 }

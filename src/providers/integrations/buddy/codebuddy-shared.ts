@@ -6,7 +6,7 @@ import type {
   ProviderId,
 } from "../../provider-registry";
 import { resolveInboundSessionId } from "../../operations/session-resolution";
-import { buildCodeBuddyUserAgent, resolveCodeBuddyVersion } from "../../operations/client-versions";
+import { buildCodeBuddyUserAgent, getCodeBuddyVersion, resolveCodeBuddyVersion } from "../../operations/client-versions";
 
 /** Client identity variant behind the per-request CodeBuddy headers. */
 export type CodeBuddyVariant = "IDE" | "CLI";
@@ -26,22 +26,31 @@ export async function codebuddyHeaders(
   context?: ProviderDispatchContext,
   request?: CanonicalRequest,
 ): Promise<Record<string, string>> {
-  const identity = variant === "IDE" ? "IDE" : "CLI";
   // Await discovery so the true latest client version is stamped on every
   // dispatch; the pinned fallback only applies on a real network failure.
   await resolveCodeBuddyVersion();
-  const ua = buildCodeBuddyUserAgent(identity);
+  const version = getCodeBuddyVersion();
+  const ua = buildCodeBuddyUserAgent("CLI", version);
+  const identity = variant === "IDE" ? "IDE" : "CLI";
+  const convId = resolveInboundSessionId(context, request) ?? `cb_session_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const reqId = crypto.randomUUID().replaceAll("-", "");
   return {
     accept: "text/event-stream",
     "User-Agent": ua,
+    Origin: `https://${codebuddyDomain(variant)}`,
+    "X-Domain": codebuddyDomain(variant),
     "X-Product": "SaaS",
     "X-IDE-Type": identity,
     "X-IDE-Name": identity,
-    "X-Domain": codebuddyDomain(variant),
+    "X-IDE-Version": version,
+    "X-Agent-Intent": "craft",
+    "X-Agent-Runtime": "local-agent",
     "x-requested-with": "XMLHttpRequest",
     "x-codebuddy-request": "1",
-    "x-conversation-id": resolveInboundSessionId(context, request) ?? crypto.randomUUID(),
-    "x-request-id": crypto.randomUUID().replaceAll("-", ""),
+    "x-conversation-id": convId,
+    "x-conversation-request-id": convId,
+    "x-conversation-message-id": convId,
+    "x-request-id": reqId,
   };
 }
 

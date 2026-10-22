@@ -56,7 +56,7 @@ describe("OpenCode provider header policy", () => {
 
       expect(captured.url).toContain(tier.path);
       expect(captured.headers["authorization"] ?? null).toBe(
-        tier.forwardsCredential ? "Bearer test-secret-token" : null,
+        tier.forwardsCredential ? "Bearer test-secret-token" : "Bearer public",
       );
       expect(captured.headers["x-opencode-client"] ?? null).toBe(
         tier.desktopHeaders ? "cli" : null,
@@ -78,7 +78,8 @@ describe("OpenCode provider header policy", () => {
 
       expect(session).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
       expect(session).toHaveLength(30);
-      expect(request).toMatch(/^msg_[0-9a-f]{30}$/);
+      expect(request).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+      expect(request).toHaveLength(30);
       expect(project).toBe("global");
       expect(userAgent).toMatch(/^opencode\/\d+\.\d+\.\d+/);
       const semverPart = userAgent.replace("opencode/", "");
@@ -155,35 +156,37 @@ describe("OpenCode provider header policy", () => {
     expect(options.required).toEqual(["cwd", "pty"]);
   });
 
-  test("backfills the read/bash agent fingerprint on Free Responses payloads", async () => {
+  test("backfills the agent fingerprint on Free Responses payloads", async () => {
     const free = await dispatchJson({
       create: (fetchImpl) => createApiKeyAdapter(OPENCODE_FREE_SPEC, fetchImpl),
-      candidate: candidateFor("opencodeft", "responses", "/zen/v1/responses"),
+      candidate: candidateFor("opencodeft", "responses", "/inference/v1/responses"),
       request: canonicalRequest({ surface: "responses" }),
     });
     const tools = free.body["tools"] as Array<Record<string, unknown>>;
-    expect(tools.map((tool) => tool["name"])).toEqual(["read", "bash"]);
+    expect(tools.map((tool) => tool["name"])).toEqual(["bash", "read", "glob", "grep"]);
     expect(free.body["stream"]).toBe(true);
   });
 
   test("preserves Studio tools while backfilling the Free agent fingerprint", async () => {
     const free = await dispatchJson({
       create: (fetchImpl) => createApiKeyAdapter(OPENCODE_FREE_SPEC, fetchImpl),
-      candidate: candidateFor("opencodeft", "chat", "/zen/v1/chat/completions"),
+      candidate: candidateFor("opencodeft", "chat", "/inference/v1/chat/completions"),
       request: { ...canonicalRequest(), tools: [{ name: "printf", jsonSchema: { type: "object" } }] },
     });
     const tools = free.body["tools"] as Array<Record<string, unknown>>;
     expect(tools.map((tool) => (tool["function"] as Record<string, unknown>)?.["name"])).toEqual([
       "printf",
-      "read",
       "bash",
+      "read",
+      "glob",
+      "grep",
     ]);
   });
 
   test("never duplicates caller-declared agent tools on Free payloads", async () => {
     const free = await dispatchJson({
       create: (fetchImpl) => createApiKeyAdapter(OPENCODE_FREE_SPEC, fetchImpl),
-      candidate: candidateFor("opencodeft", "chat", "/zen/v1/chat/completions"),
+      candidate: candidateFor("opencodeft", "chat", "/inference/v1/chat/completions"),
       request: {
         ...canonicalRequest(),
         tools: [
@@ -196,6 +199,8 @@ describe("OpenCode provider header policy", () => {
     expect(tools.map((tool) => (tool["function"] as Record<string, unknown>)?.["name"])).toEqual([
       "read",
       "bash",
+      "glob",
+      "grep",
     ]);
   });
 });
@@ -214,7 +219,8 @@ describe("OpenCode bundled catalog", () => {
 
       expect(mimo).toBeDefined();
       expect(mimo?.wireFamily).toBe("chat");
-      expect(mimo?.endpointPath).toBe("/zen/v1/chat/completions");
+      const expectedPath = models === OPENCODE_FREE_MODELS ? "/inference/v1/chat/completions" : "/zen/v1/chat/completions";
+      expect(mimo?.endpointPath).toBe(expectedPath);
       expect(mimo?.contextLimit).toBe(200_000);
       expect(mimo?.outputLimit).toBe(32_000);
       expect(mimo?.modalities.input).toEqual(["text", "image", "document", "audio"]);

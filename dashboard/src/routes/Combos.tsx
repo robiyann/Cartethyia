@@ -1,10 +1,23 @@
-import { ArrowRight, Copy, Layers, Pencil, Plus, Route, Search, Trash2, X } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  ArrowRight,
+  Copy,
+  Download,
+  FileText,
+  Layers,
+  Pencil,
+  Plus,
+  Route,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardBody, CardHeader } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
+import { Input, Textarea } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/state";
 import { Inline } from "../components/ui/inline";
@@ -37,6 +50,11 @@ function AliasesSection(): ReactNode {
   const [editingAlias, setEditingAlias] = useState<ModelAliasRow | null>(null);
   const [aliasName, setAliasName] = useState("");
   const [targetModel, setTargetModel] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [promptStrategy, setPromptStrategy] = useState<"prepend" | "override">("prepend");
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<ModelAliasRow | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -45,10 +63,60 @@ function AliasesSection(): ReactNode {
 
   const aliases = useMemo(() => aliasesQuery.data ?? [], [aliasesQuery.data]);
 
+  const processFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      setSystemPrompt(text);
+      setUploadedFileName(`${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      toast.success(`Loaded prompt from ${file.name}`);
+      if (!aliasName.trim()) {
+        const cleanName = file.name
+          .replace(/\.[^/.]+$/, "")
+          .replace(/[^a-zA-Z0-9_-]/g, "-")
+          .toLowerCase();
+        setAliasName(cleanName);
+      }
+    } catch {
+      toast.error("Failed to read file");
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      void processFile(file);
+    }
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      void processFile(file);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!systemPrompt.trim()) return;
+    const blob = new Blob([systemPrompt], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${aliasName.trim() || "prompt"}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const openCreate = () => {
     setEditingAlias(null);
     setAliasName("");
     setTargetModel("");
+    setSystemPrompt("");
+    setUploadedFileName(null);
+    setIsDragging(false);
+    setPromptStrategy("prepend");
     setDialogOpen(true);
   };
 
@@ -56,6 +124,10 @@ function AliasesSection(): ReactNode {
     setEditingAlias(a);
     setAliasName(a.alias);
     setTargetModel(a.targetModel);
+    setSystemPrompt(a.systemPrompt ?? "");
+    setUploadedFileName(null);
+    setIsDragging(false);
+    setPromptStrategy((a.promptStrategy as "prepend" | "override") ?? "prepend");
     setDialogOpen(true);
   };
 
@@ -65,7 +137,14 @@ function AliasesSection(): ReactNode {
 
     if (editingAlias) {
       updateMutation.mutate(
-        { id: editingAlias.id, request: { targetModel: targetModel.trim() } },
+        {
+          id: editingAlias.id,
+          request: {
+            targetModel: targetModel.trim(),
+            systemPrompt: systemPrompt.trim().length > 0 ? systemPrompt.trim() : null,
+            promptStrategy,
+          },
+        },
         {
           onSuccess: () => {
             setDialogOpen(false);
@@ -75,12 +154,19 @@ function AliasesSection(): ReactNode {
       );
     } else {
       createMutation.mutate(
-        { alias: aliasName.trim(), targetModel: targetModel.trim() },
+        {
+          alias: aliasName.trim(),
+          targetModel: targetModel.trim(),
+          systemPrompt: systemPrompt.trim().length > 0 ? systemPrompt.trim() : null,
+          promptStrategy,
+        },
         {
           onSuccess: () => {
             setDialogOpen(false);
             setAliasName("");
             setTargetModel("");
+            setSystemPrompt("");
+            setPromptStrategy("prepend");
           },
         },
       );
@@ -168,6 +254,11 @@ function AliasesSection(): ReactNode {
                   >
                     {a.targetModel}
                   </code>
+                  {a.systemPrompt ? (
+                    <Badge tone="purple" title={a.systemPrompt}>
+                      {a.systemPrompt.startsWith("@file:") ? "Prompt File" : "Substrate"}
+                    </Badge>
+                  ) : null}
                 </div>
 
                 <Inline gap="4px" style={{ flexShrink: 0 }}>
@@ -247,6 +338,133 @@ function AliasesSection(): ReactNode {
             title="Select target model"
             multi={false}
           />
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "6px",
+              }}
+            >
+              <label htmlFor="alias-substrate-input" className="form-label" style={{ margin: 0 }}>
+                <span>System Substrate / Prompt</span>
+                <span className="form-hint" style={{ marginLeft: "6px" }}>
+                  Optional
+                </span>
+              </label>
+              <Inline gap="6px">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".md,.markdown,.txt"
+                  onChange={handleFileChange}
+                  style={{ display: "none" }}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  icon={<Upload size={12} />}
+                >
+                  Upload .md
+                </Button>
+                {systemPrompt.trim().length > 0 ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={handleDownload}
+                    icon={<Download size={12} />}
+                    title="Export prompt as .md"
+                  />
+                ) : null}
+              </Inline>
+            </div>
+
+            {uploadedFileName ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "6px 10px",
+                  marginBottom: "8px",
+                  borderRadius: "6px",
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                  fontSize: "12px",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                <Inline gap="6px" align="center">
+                  <FileText size={13} />
+                  <span>{uploadedFileName}</span>
+                </Inline>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadedFileName(null);
+                    setSystemPrompt("");
+                  }}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "inherit",
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                  title="Clear file"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ) : null}
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              style={{
+                borderRadius: "8px",
+                outline: isDragging ? "2px dashed var(--accent)" : "none",
+                outlineOffset: "2px",
+              }}
+            >
+              <Textarea
+                id="alias-substrate-input"
+                value={systemPrompt}
+                onChange={(e) => {
+                  setSystemPrompt(e.target.value);
+                  if (uploadedFileName) setUploadedFileName(null);
+                }}
+                placeholder="Upload a .md file above, drop a file here, or enter prompt text..."
+                hint={
+                  isDragging
+                    ? "Drop your .md file here to load!"
+                    : "Supports uploaded markdown, raw text, or @file:/path/to/prompt.md"
+                }
+                rows={4}
+              />
+            </div>
+          </div>
+          {systemPrompt.trim().length > 0 ? (
+            <Select
+              label="Prompt Strategy"
+              value={promptStrategy}
+              onValueChange={(val) => setPromptStrategy(val as "prepend" | "override")}
+              options={[
+                { value: "prepend", label: "Prepend (Token 0 — preserves agent persona & tools)" },
+                { value: "override", label: "Override (Replaces client system message completely)" },
+              ]}
+            />
+          ) : null}
           <div
             style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}
           >

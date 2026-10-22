@@ -14,6 +14,8 @@ export interface ModelAliasRow {
   readonly tenantId: string;
   readonly alias: string;
   readonly targetModel: string;
+  readonly systemPrompt?: string | null;
+  readonly promptStrategy?: string | null;
   readonly contextLimit?: number | null;
   readonly outputLimit?: number | null;
   readonly createdAt: string;
@@ -23,10 +25,14 @@ export interface ModelAliasRow {
 export interface ModelAliasCreateInput {
   readonly alias: string;
   readonly targetModel: string;
+  readonly systemPrompt?: string | null;
+  readonly promptStrategy?: string | null;
 }
 
 export interface ModelAliasPatchInput {
-  readonly targetModel: string;
+  readonly targetModel?: string;
+  readonly systemPrompt?: string | null;
+  readonly promptStrategy?: string | null;
 }
 
 export interface ModelComboRow {
@@ -161,7 +167,12 @@ export function createModelRoutingOperations(deps: ModelRoutingConfig) {
             422,
             `targetModel ${targetModel} does not resolve to a known model or combo`,
           );
-        const created = await deps.store.createAlias(tenantId, { alias, targetModel });
+        const created = await deps.store.createAlias(tenantId, {
+          alias,
+          targetModel,
+          ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+          ...(input.promptStrategy !== undefined ? { promptStrategy: input.promptStrategy } : {}),
+        });
         await deps.auditSink?.record({
           access: a,
           action: "model_alias.created",
@@ -178,24 +189,30 @@ export function createModelRoutingOperations(deps: ModelRoutingConfig) {
       ): Promise<ModelAliasRow> {
         const a = requireTenantScope(access, "dashboard:write");
         const tenantId = a.tenantId;
-        const targetModel = patch.targetModel?.trim();
-        if (!targetModel)
-          throw new ConsoleDomainError("invalid_request", 422, "targetModel is required");
+        const targetModel = patch.targetModel !== undefined ? patch.targetModel.trim() : undefined;
+        if (targetModel !== undefined && !targetModel)
+          throw new ConsoleDomainError("invalid_request", 422, "targetModel cannot be empty");
         const existing = await deps.store.listAliases(tenantId);
         const current = existing.find((row) => row.id === id);
         if (!current) throw new ConsoleDomainError("alias_not_found", 404, `Alias ${id} not found`);
-        if (current.alias === targetModel)
-          throw new ConsoleDomainError("self_reference", 422, "alias cannot target itself");
-        if (aliasCycleExists(existing, current.alias, targetModel))
-          throw new ConsoleDomainError("alias_cycle", 422, "alias target introduces a cycle");
-        const combos = await deps.store.listCombos(tenantId);
-        if (!(await targetResolves(deps.store, tenantId, targetModel, existing, combos)))
-          throw new ConsoleDomainError(
-            "unresolved_target",
-            422,
-            `targetModel ${targetModel} does not resolve to a known model or combo`,
-          );
-        const updated = await deps.store.updateAlias(tenantId, id, { targetModel });
+        if (targetModel !== undefined) {
+          if (current.alias === targetModel)
+            throw new ConsoleDomainError("self_reference", 422, "alias cannot target itself");
+          if (aliasCycleExists(existing, current.alias, targetModel))
+            throw new ConsoleDomainError("alias_cycle", 422, "alias target introduces a cycle");
+          const combos = await deps.store.listCombos(tenantId);
+          if (!(await targetResolves(deps.store, tenantId, targetModel, existing, combos)))
+            throw new ConsoleDomainError(
+              "unresolved_target",
+              422,
+              `targetModel ${targetModel} does not resolve to a known model or combo`,
+            );
+        }
+        const updated = await deps.store.updateAlias(tenantId, id, {
+          ...(targetModel !== undefined ? { targetModel } : {}),
+          ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
+          ...(patch.promptStrategy !== undefined ? { promptStrategy: patch.promptStrategy } : {}),
+        });
         if (!updated) throw new ConsoleDomainError("alias_not_found", 404, `Alias ${id} not found`);
         await deps.auditSink?.record({
           access: a,
@@ -395,8 +412,17 @@ export type ComboSchemaParity = ExpectComboParity<
     : false
 >;
 
-const createAliasBody = t.Object({ alias: t.String(), targetModel: t.String() });
-const updateAliasBody = t.Object({ targetModel: t.String() });
+const createAliasBody = t.Object({
+  alias: t.String(),
+  targetModel: t.String(),
+  systemPrompt: t.Optional(t.Nullable(t.String())),
+  promptStrategy: t.Optional(t.Nullable(t.String())),
+});
+const updateAliasBody = t.Object({
+  targetModel: t.Optional(t.String()),
+  systemPrompt: t.Optional(t.Nullable(t.String())),
+  promptStrategy: t.Optional(t.Nullable(t.String())),
+});
 /** The combo-strategy enum's own values; see `ComboSchemaParity` above. */
 const comboStrategySchema = literalUnion(modelComboStrategy.enumValues);
 const createComboBody = t.Object({

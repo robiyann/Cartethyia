@@ -20,6 +20,7 @@ import { resolveTenantOverride } from "../../persistence/tenant-scope";
 import {
   type RouteCandidate,
   type ComboDefinition,
+  type AliasSubstrateConfig,
   type PoolRoutingSetting,
   type ProviderRoutingMap,
   type RouteSnapshot,
@@ -444,10 +445,17 @@ class RouteCatalogRepository {
     }
 
     const aliases: Record<string, Record<string, string>> = {};
+    const aliasSubstrates: Record<string, Record<string, AliasSubstrateConfig>> = {};
     const cliAliases: Record<string, Record<string, string>> = {};
     for (const row of aliasRows) {
       if (tenantId === undefined || row.tenantId === tenantId) {
         (aliases[row.tenantId] ??= {})[row.alias] = row.targetModel;
+        if (row.systemPrompt && row.systemPrompt.trim().length > 0) {
+          (aliasSubstrates[row.tenantId] ??= {})[row.alias] = {
+            systemPrompt: row.systemPrompt.trim(),
+            promptStrategy: (row.promptStrategy as "prepend" | "override") ?? "prepend",
+          };
+        }
       }
     }
     // CLI-tool mappings stay separate from tenant model aliases. The request
@@ -475,6 +483,7 @@ class RouteCatalogRepository {
       candidates,
       aliases,
       cli_aliases: cliAliases,
+      ...(Object.keys(aliasSubstrates).length > 0 ? { alias_substrates: aliasSubstrates } : {}),
       combos,
       ...(routingMap ? { providerRouting: routingMap } : {}),
       ...(Object.keys(poolRouting).length > 0 ? { poolRouting } : {}),

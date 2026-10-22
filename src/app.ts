@@ -28,6 +28,7 @@ import {
   type ProviderProxyHandlerDeps,
 } from "./transport/dispatch/proxy-request";
 import { createResponsesCompactHandler } from "./transport/dispatch/responses-compact";
+import { createSystemOneHandler } from "./transport/dispatch/systemone";
 
 import { createTransportPipeline } from "./transport/middleware/pipeline";
 import { PublicModelCatalogStore, type AllowedModelEntry } from "./console/providers/catalog/public-model-store";
@@ -380,6 +381,10 @@ export function createGatewayApp(deps: GatewayAppDeps) {
       telemetryBuffer: deps.telemetryBuffer,
     });
 
+    const handleSystemOne = createSystemOneHandler({
+      stateStore: requestStateStore,
+    });
+
     // Gateway mounting: the pipeline owner composes stages, telemetry, and
     // cleanup; app only registers the public route table.
     app.use(
@@ -387,6 +392,7 @@ export function createGatewayApp(deps: GatewayAppDeps) {
         routes.post("/chat/completions", proxyHandler);
         routes.post("/responses", proxyHandler);
         routes.post("/responses/compact", handleResponsesCompact);
+        routes.post("/systemone", handleSystemOne);
         routes.post("/messages", proxyHandler);
         routes.post("/completions", proxyHandler);
         routes.get("/models", handleModelsList);

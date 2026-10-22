@@ -1,5 +1,5 @@
 import { completeRequiredSchema } from "../../protocol/primitives";
-import type { ModelDefinition } from "../provider-registry";
+import type { ModelDefinition, ProviderDispatchContext } from "../provider-registry";
 import type { CanonicalRequest, ToolDefinition } from "../../transport/canonical-model";
 import { isRecord } from "../../protocol/primitives";
 import { PROVIDER_COMPATIBILITY_PROFILES } from "../provider-metadata";
@@ -7,6 +7,7 @@ import { defineModel } from "../model-definition";
 import type { ApiKeyProviderSpec } from "./configured-provider";
 import { resolveOpenCodeVersion } from "../operations/client-versions";
 import { buildOpenCodeHeaders } from "./opencode-fingerprint";
+import { resolveInboundSessionId } from "../operations/session-resolution";
 /**
  * OpenCode's three API-key tiers, all served from `opencode.ai`:
  *
@@ -23,29 +24,80 @@ import { buildOpenCodeHeaders } from "./opencode-fingerprint";
  * intentionally API-key-only.
  */
 const ZEN_PATH_PREFIX = "/zen/v1";
+const INFERENCE_PATH_PREFIX = "/inference/v1";
 const GO_PATH_PREFIX = "/zen/go/v1";
 
-async function opencodeDesktopHeaders(): Promise<Record<string, string>> {
+async function opencodeDesktopHeaders(
+  context?: ProviderDispatchContext,
+  request?: CanonicalRequest,
+): Promise<Record<string, string>> {
   // Await discovery so the true latest client version is stamped on every
   // dispatch; the pinned fallback only applies on a real network failure.
   await resolveOpenCodeVersion();
-  return buildOpenCodeHeaders();
+  const inboundSession = resolveInboundSessionId(context, request);
+  return buildOpenCodeHeaders(undefined, inboundSession);
 }
 /** Canonical agent-tool fingerprint OpenCode Free requires on every dispatch.
  * Upstream rejects tool-less or non-agent requests with `FreeTierError`
- * (upstream 403), so the adapter backfills exactly these two built-in tools
- * when the caller did not declare them. They are plain `ToolDefinition`s —
- * every wire codec serializes them, no per-wire payload patching needed. */
-const FREE_AGENT_TOOLS: readonly { readonly name: string; readonly description: string }[] = [
-  { name: "read", description: "Read a file. Do not call unless the user explicitly asks for a file read." },
-  { name: "bash", description: "Run a shell command. Do not call unless the user explicitly asks to run a command." },
+ * (upstream 403), so the adapter backfills exactly these four built-in tools
+ * with valid schemas when the caller did not declare them. */
+const FREE_AGENT_TOOLS: readonly ToolDefinition[] = [
+  {
+    name: "bash",
+    description: "Executes a given bash command in a persistent shell session with optional timeout.",
+    jsonSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "The command to execute" },
+        timeout: { type: "integer", description: "Optional timeout in milliseconds" },
+        workdir: { type: "string", description: "The working directory" },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "read",
+    description: "Read a file or directory from the local filesystem.",
+    jsonSchema: {
+      type: "object",
+      properties: {
+        filePath: { type: "string", description: "The absolute path to the file or directory to read" },
+        offset: { type: "integer", description: "The line number to start reading from" },
+        limit: { type: "integer", description: "The maximum number of lines to read" },
+      },
+      required: ["filePath"],
+    },
+  },
+  {
+    name: "glob",
+    description: "Fast file pattern matching tool that works with any codebase size",
+    jsonSchema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "The glob pattern to match files against" },
+        path: { type: "string", description: "The directory to search in" },
+      },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "grep",
+    description: "Fast content search tool that works with any codebase size",
+    jsonSchema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "The regex pattern to search for in file contents" },
+        path: { type: "string", description: "The directory to search in" },
+        include: { type: "string", description: "File pattern to include in the search" },
+      },
+      required: ["pattern"],
+    },
+  },
 ];
 
 function ensureFreeAgentRequest(request: CanonicalRequest): CanonicalRequest {
   const names = new Set((request.tools ?? []).map((tool) => tool.name));
-  const missing: ToolDefinition[] = FREE_AGENT_TOOLS.filter((tool) => !names.has(tool.name)).map(
-    (tool) => ({ name: tool.name, description: tool.description, jsonSchema: { type: "object", properties: {} } }),
-  );
+  const missing: ToolDefinition[] = FREE_AGENT_TOOLS.filter((tool) => !names.has(tool.name));
   if (missing.length === 0 && request.stream) return request;
   return { ...request, stream: true, tools: [...(request.tools ?? []), ...missing] };
 }
@@ -75,7 +127,9 @@ function opencodeSpec(providerId: "opencodeft" | "opencodezen" | "opencodego"): 
     },
     supported_wire_families: ["chat", "responses"],
     promptCache: false,
-    extra_headers: { accept: "application/json" },
+    extra_headers: {
+      accept: "application/json",
+    },
     // Go is API-key-only: it never receives the desktop fingerprint.
     ...(providerId === "opencodego" ? {} : { buildExtraHeaders: opencodeDesktopHeaders }),
     // OpenCode Free is a genuinely public, unauthenticated endpoint. Console
@@ -86,6 +140,9 @@ function opencodeSpec(providerId: "opencodeft" | "opencodezen" | "opencodego"): 
       completeOpenCodeToolSchemas(payload);
       if (candidate.wire_family === "responses") {
         payload.store = false;
+      }
+      if (providerId === "opencodeft" && payload.tool_choice === "none") {
+        payload.tool_choice = "auto";
       }
       if (candidate.wire_family === "chat" && request.stream) {
         payload.stream_options = {
@@ -125,9 +182,12 @@ const sharedZenChat: readonly ModelDefinition[] = [
 const MUSE_SPARK_REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 export const OPENCODE_FREE_MODELS: readonly ModelDefinition[] = [
-  ...sharedZenChat,
-  defineModel({ id: "muse-spark-1.2-contributor-free", providerId: "opencode", wireFamily: "responses", endpoint: `${ZEN_PATH_PREFIX}/responses`, vision: true, reasoning: true, reasoningEfforts: MUSE_SPARK_REASONING_EFFORTS }),
-  defineModel({ id: "muse-spark-1.3-contributor-free", providerId: "opencode", wireFamily: "responses", endpoint: `${ZEN_PATH_PREFIX}/responses`, vision: true, reasoning: true, reasoningEfforts: MUSE_SPARK_REASONING_EFFORTS }),
+  defineModel({ id: "big-pickle", providerId: "opencode", wireFamily: "chat", endpoint: `${INFERENCE_PATH_PREFIX}/chat/completions`, vision: true, reasoning: true }),
+  defineModel({ id: "mimo-v2.5-free", providerId: "opencode", wireFamily: "chat", endpoint: `${INFERENCE_PATH_PREFIX}/chat/completions`, vision: true, reasoning: true }),
+  defineModel({ id: "mimo-v2.6-flash-free", wireFamily: "chat", endpoint: `${INFERENCE_PATH_PREFIX}/chat/completions`, ctx: 200000, out: 32000, vision: true, document: true, audio: true, reasoning: true, free: true }),
+  defineModel({ id: "glm-5.3-flash-free", wireFamily: "chat", endpoint: `${INFERENCE_PATH_PREFIX}/chat/completions`, ctx: 200000, out: 32000, vision: true, reasoning: true, free: true }),
+  defineModel({ id: "muse-spark-1.2-contributor-free", providerId: "opencode", wireFamily: "responses", endpoint: `${INFERENCE_PATH_PREFIX}/responses`, vision: true, reasoning: true, reasoningEfforts: MUSE_SPARK_REASONING_EFFORTS }),
+  defineModel({ id: "muse-spark-1.3-contributor-free", providerId: "opencode", wireFamily: "responses", endpoint: `${INFERENCE_PATH_PREFIX}/responses`, vision: true, reasoning: true, reasoningEfforts: MUSE_SPARK_REASONING_EFFORTS }),
 ];
 
 export const OPENCODE_ZEN_MODELS: readonly ModelDefinition[] = [

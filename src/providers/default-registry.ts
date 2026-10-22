@@ -190,12 +190,12 @@ export const PROVIDER_CAPABILITIES = {
     // ["chat", "responses"] and no catalog row uses it, so a probe resolving
     // `messages` would name a family dispatch rejects.
     endpointPathsByWireFamily: {
-      chat: "/zen/v1/chat/completions",
-      responses: "/zen/v1/responses",
+      chat: "/inference/v1/chat/completions",
+      responses: "/inference/v1/responses",
     },
     loadAdapter: async () => createApiKeyAdapter((await import("./integrations/opencode")).OPENCODE_FREE_SPEC),
     loadModels: async () => (await import("./integrations/opencode")).OPENCODE_FREE_MODELS,
-    loadModelDiscovery: openAIModelDiscovery("opencodeft", { transformBaseUrl: (baseUrl) => `${baseUrl.replace(/\/+$/, "")}/zen/v1` }),
+    loadModelDiscovery: openAIModelDiscovery("opencodeft", { transformBaseUrl: (baseUrl) => `${baseUrl.replace(/\/+$/, "")}/inference/v1` }),
     modelDiscoveryRequiresCredential: false,
   },
   opencodezen: {

@@ -697,7 +697,7 @@ export async function handleProviderProxyRequest(
           headers: {
             "content-type": "text/event-stream",
             connection: "keep-alive",
-            ...proxySuccessHeaders(state),
+            ...proxySuccessHeaders(state, inboundHeaders),
             // Intermediaries (nginx, Cloudflare, corporate proxies) otherwise
             // buffer the whole SSE response and flush it at the end, which
             // makes a live stream look like one delayed chunk. `no-transform`
@@ -806,7 +806,7 @@ export async function handleProviderProxyRequest(
       });
       metrics.proxy_requests_total.inc(1, { status: "completed" });
       return new Response(output.bytes as unknown as BodyInit, {
-        headers: { "content-type": output.content_type, ...proxySuccessHeaders(state) },
+        headers: { "content-type": output.content_type, ...proxySuccessHeaders(state, inboundHeaders) },
       });
     },
   });

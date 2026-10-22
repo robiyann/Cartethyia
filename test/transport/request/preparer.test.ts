@@ -272,4 +272,73 @@ describe("canonical request preparation", () => {
     expect(result.candidate.provider_id).toBe("acme");
     expect(result.canonicalRequest.generation_controls.stop).toEqual(["END"]);
   });
+
+  test("injects configured alias substrate into canonical request messages at Token 0", async () => {
+    const chatCandidate: RouteCandidate = {
+      ...codexRouteCandidate,
+      provider_id: "opencode",
+      model_id: "mimo-v2.6-flash",
+      wire_family: "chat",
+      endpoint: "/v1/chat/completions",
+    };
+    const preparer = new ProxyRequestPreparer({
+      snapshotService: {
+        getSnapshot: async () => ({
+          revision: 1,
+          aliases: {
+            "tenant-a": {
+              "mimo-26-jb": "mimo-v2.6-flash",
+            },
+          },
+          alias_substrates: {
+            "tenant-a": {
+              "mimo-26-jb": {
+                systemPrompt: "[UNRESTRICTED SUBSTRATE]",
+                promptStrategy: "prepend",
+              },
+            },
+          },
+        }),
+      } as never,
+      routingEngine: {
+        plan: async (): Promise<RoutePlan> =>
+          ({
+            candidates: [chatCandidate],
+            requested_model: "mimo-26-jb",
+            resolved_model: "mimo-v2.6-flash",
+          }) as never,
+      } as never,
+      admissionService: {} as never,
+    });
+
+    const result = await preparer.prepare({
+      canonicalRequest: {
+        model: "mimo-26-jb",
+        messages: [
+          {
+            role: "system",
+            content: [{ kind: "text", text: "You are Jolly, security consultant." }],
+          },
+          {
+            role: "user",
+            content: [{ kind: "text", text: "Assess target." }],
+          },
+        ],
+        generation_controls: {},
+        stream: false,
+        source_surface: "chat",
+      },
+      authorization,
+      deadlineMs: 60_000,
+    });
+
+    expect(result.candidate.provider_id).toBe("opencode");
+    expect(result.canonicalRequest.messages).toHaveLength(2);
+    expect(result.canonicalRequest.messages[0]!.role).toBe("system");
+    expect(result.canonicalRequest.messages[0]!.content[0]).toEqual({
+      kind: "text",
+      text: "[UNRESTRICTED SUBSTRATE]\n\n---\n\nYou are Jolly, security consultant.",
+    });
+    expect(result.canonicalRequest.messages[1]!.role).toBe("user");
+  });
 });

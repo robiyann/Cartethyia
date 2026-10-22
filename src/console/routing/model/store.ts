@@ -27,6 +27,8 @@ function mapAliasRow(row: ModelAlias): ModelAliasRow {
     tenantId: row.tenantId,
     alias: row.alias,
     targetModel: row.targetModel,
+    systemPrompt: row.systemPrompt,
+    promptStrategy: row.promptStrategy,
     contextLimit: meta?.contextLimit ?? 200_000,
     outputLimit: meta?.outputLimit ?? 64_192,
     createdAt: row.createdAt.toISOString(),
@@ -77,7 +79,13 @@ export class DrizzleModelRoutingStore implements ModelRoutingStore {
   async createAlias(tenantId: string, input: ModelAliasCreateInput): Promise<ModelAliasRow> {
     const rows = await this.db
       .insert(modelAliases)
-      .values({ tenantId, alias: input.alias, targetModel: input.targetModel })
+      .values({
+        tenantId,
+        alias: input.alias,
+        targetModel: input.targetModel,
+        ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+        ...(input.promptStrategy !== undefined ? { promptStrategy: input.promptStrategy } : {}),
+      })
       .returning();
     const row = rows[0];
     if (!row) throw new Error("model alias insert returned no row");
@@ -91,7 +99,12 @@ export class DrizzleModelRoutingStore implements ModelRoutingStore {
   ): Promise<ModelAliasRow | undefined> {
     const rows = await this.db
       .update(modelAliases)
-      .set({ targetModel: patch.targetModel, updatedAt: new Date() })
+      .set({
+        ...(patch.targetModel !== undefined ? { targetModel: patch.targetModel } : {}),
+        ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
+        ...(patch.promptStrategy !== undefined ? { promptStrategy: patch.promptStrategy } : {}),
+        updatedAt: new Date(),
+      })
       .where(and(eq(modelAliases.tenantId, tenantId), eq(modelAliases.id, id)))
       .returning();
     const row = rows[0];

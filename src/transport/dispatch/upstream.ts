@@ -22,10 +22,21 @@ export function forwardedRequestHeaders(request: Request): Record<string, string
   return forwarded;
 }
 
-export function proxySuccessHeaders(state: { requestId: string }): Record<string, string> {
+export function proxySuccessHeaders(
+  state: { requestId: string },
+  inboundHeaders?: Record<string, string>,
+): Record<string, string> {
+  const conversationId =
+    inboundHeaders?.["x-conversation-id"] ??
+    inboundHeaders?.["x-session-id"] ??
+    inboundHeaders?.["x-opencode-session"] ??
+    inboundHeaders?.["x-claude-code-session-id"] ??
+    state.requestId;
   return {
     "cache-control": "no-store",
     "x-request-id": state.requestId,
+    "x-conversation-id": conversationId,
+    "x-session-id": conversationId,
     ...GATEWAY_SECURITY_HEADERS,
   };
 }

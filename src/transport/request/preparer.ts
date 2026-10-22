@@ -2,7 +2,8 @@ import { GatewayError } from "../gateway-error";
 import type { CanonicalRequest, ContentPart } from "../canonical-model";
 import type { ApiKeyAdmissionService } from "../../security/admission";
 import type { RouteCandidate as RouteCandidate, InMemoryRouteSnapshotService, RoutePlan } from "../routing/route-model";
-import { resolveAliasTarget, type RoutingEngine } from "../routing/router";
+import { resolveAliasSubstrate, resolveAliasTarget, type RoutingEngine } from "../routing/router";
+import { resolveSubstrateContent, weaveSubstrate } from "./substrate-weaver";
 import { deriveRequiredCapabilities, projectForRoute, routeCapabilitiesFor } from "../translation/capabilities";
 import type { RequiredCapability } from "../translation/capabilities";
 import { isModelAllowed, isProviderAllowed, type ResolvedApiKey } from "../../security/api-key-auth";
@@ -365,6 +366,28 @@ export class ProxyRequestPreparer {
     // each variant against the same snapshot; the first non-empty plan wins.
     let plan: RoutePlan | undefined;
     let variantRequest = request;
+
+    // Weave model alias substrate/system prompt (e.g. virtual model or JB prompt)
+    const substrateConfig = resolveAliasSubstrate(
+      snapshot,
+      authorization.tenantId,
+      request.model,
+      allowCliMappings,
+    );
+    if (substrateConfig?.systemPrompt) {
+      const substrateText = resolveSubstrateContent(substrateConfig.systemPrompt);
+      if (substrateText) {
+        variantRequest = {
+          ...variantRequest,
+          messages: weaveSubstrate(
+            variantRequest.messages,
+            substrateText,
+            substrateConfig.promptStrategy ?? "prepend",
+          ),
+        };
+      }
+    }
+
     let degraded: readonly RequiredCapability[] = [];
     // Explicit caller opt-out wins over capability routing: dropping encrypted
     // reasoning is a lossy request the caller asked for, so it applies before

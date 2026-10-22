@@ -60,6 +60,7 @@ const PROXY_JSON_ROUTES = [
   "/v1/completions",
   "/v1/responses/compact",
   "/v1/messages",
+  "/v1/systemone",
 ] as const;
 
 /** Whether `path` is one of the canonical JSON proxy routes. */
@@ -278,7 +279,7 @@ export function createCanonicalRequestMiddleware(deps: {
       if (request.method === "GET" || request.method === "HEAD") return;
       // `/v1/completions` needs no separate arm: it is already in
       // `PROXY_JSON_ROUTES`, so `isJsonProxyRoute` covers it.
-      if (!isJsonProxyRoute(path) || path === "/v1/responses/compact") return;
+      if (!isJsonProxyRoute(path) || path === "/v1/responses/compact" || path === "/v1/systemone") return;
       // Model discovery and other GET/multimodal routes must not go through canonical parsing.
       const state = deps.stateStore.require(request);
       // Single-read invariant: the ingress policy middleware already decoded the
@@ -321,7 +322,7 @@ export function createProxyRoutePreparationMiddleware(deps: {
       if (!path.startsWith("/v1/")) return;
       if (request.method === "GET" || request.method === "HEAD") return;
       const isJsonRoute = isJsonProxyRoute(path);
-      if (!isJsonRoute || path === "/v1/responses/compact") return;
+      if (!isJsonRoute || path === "/v1/responses/compact" || path === "/v1/systemone") return;
       const state = deps.stateStore.require(request);
       if (!state.authorization || !state.canonicalRequest)
         throw new GatewayError("admission_unavailable", 503, "proxy request context unavailable");

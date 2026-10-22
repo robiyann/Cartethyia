@@ -65,8 +65,10 @@ export async function workbuddyHeaders(
 ): Promise<Record<string, string>> {
   await resolveWorkBuddyVersion();
   const clientVersion = getWorkBuddyClientVersion();
+  const convId = resolveInboundSessionId(context, request) ?? `cb_session_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const reqId = randomUUID().replaceAll("-", "");
   const headers: Record<string, string> = {
-    accept: "application/json, text/event-stream",
+    accept: "text/event-stream, application/json",
     "user-agent": buildWorkBuddyUserAgent(clientVersion, getWorkBuddyCliVersion()),
     origin: `https://${WORKBUDDY_DOMAIN}`,
     referer: `https://${WORKBUDDY_DOMAIN}/`,
@@ -74,6 +76,8 @@ export async function workbuddyHeaders(
     "x-requested-with": "XMLHttpRequest",
     "x-codebuddy-request": "1",
     "x-domain": WORKBUDDY_DOMAIN,
+    "x-agent-intent": "craft",
+    "x-agent-runtime": "local-agent",
     "x-agent-purpose": "conversation",
     "x-ide-name": "WorkBuddy",
     "x-ide-type": "WorkBuddy",
@@ -83,8 +87,10 @@ export async function workbuddyHeaders(
     // explicitly so upstream risk control does not treat the omission as
     // suspicious.
     "x-no-enterprise-id": "1",
-    "x-conversation-id": resolveInboundSessionId(context, request) ?? randomUUID(),
-    "x-request-id": randomUUID().replaceAll("-", ""),
+    "x-conversation-id": convId,
+    "x-conversation-request-id": convId,
+    "x-conversation-message-id": convId,
+    "x-request-id": reqId,
   };
   const accountId = context?.credential.account_id;
   if (accountId) {

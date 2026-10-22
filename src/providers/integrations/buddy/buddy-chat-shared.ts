@@ -246,33 +246,58 @@ export function finalizeBuddyMessages(
   ensureBuddyLeadingSystem(messages, systemPrompt);
 }
 
+function extractSystemText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (isRecord(part) && typeof part["text"] === "string") return part["text"];
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
 /**
- * Applies the buddy-family message envelope in place: drop caller
- * `system`/`developer` turns, install the variant's fixed leading system
- * prompt, rebuild bare string user content as a typed text block, then
- * coalesce consecutive user turns.
+ * Applies the buddy-family message envelope in place: preserve caller
+ * `system`/`developer` turns as the leading system prompt (or fall back to
+ * default prompt if none provided), rebuild bare string user content as a
+ * typed text block, then coalesce consecutive user turns.
  *
- * The upstream gateway expects that fixed leading prompt and rejects bare
- * string user content, so every variant that has one applies the same
- * transformation — only the prompt text differs, which is why the caller
- * passes it in. Variants without a fixed prompt (CodeBuddy CN replaces caller
- * system text with a neutralizer instead) keep their own path and share only
- * `coalesceConsecutiveUserMessages`.
- *
- * Tool call/output pairing is intentionally NOT handled here: the shared
- * canonical repair (`repairRequestToolCalls`, request/preparer) owns it for
- * every route, so this stays a system-prompt and content-shape hook.
+ * The upstream gateway expects a leading system prompt (code 11128) and rejects
+ * bare string user content. Preserving caller system text allows agents to use
+ * their own custom persona without gateway identity hijacking.
  */
 export function applyBuddySystemPrompt(
   messages: Array<Record<string, unknown>>,
-  systemPrompt: string,
+  defaultSystemPrompt: string,
 ): void {
-  const source = messages.filter(
-    (message) => message["role"] !== "system" && message["role"] !== "developer",
-  );
+  const callerSystemTexts: string[] = [];
+  const nonSystemMessages: Array<Record<string, unknown>> = [];
+
+  for (const message of messages) {
+    if (message["role"] === "system" || message["role"] === "developer") {
+      const text = extractSystemText(message["content"]);
+      if (text.trim().length > 0) {
+        callerSystemTexts.push(text.trim());
+      }
+    } else {
+      nonSystemMessages.push(message);
+    }
+  }
+
+  // Preserve caller's persona/system prompt if provided; only fall back to default
+  // gateway prompt if the conversation arrived with no system turn at all.
+  const effectiveSystemPrompt =
+    callerSystemTexts.length > 0 ? callerSystemTexts.join("\n\n") : defaultSystemPrompt;
+
   messages.length = 0;
-  messages.push({ role: "system", content: systemPrompt });
-  for (const message of source) {
+  messages.push({ role: "system", content: effectiveSystemPrompt });
+
+  for (const message of nonSystemMessages) {
     if (message["role"] === "user" && typeof message["content"] === "string") {
       messages.push({
         ...message,
@@ -282,5 +307,5 @@ export function applyBuddySystemPrompt(
       messages.push({ ...message });
     }
   }
-  finalizeBuddyMessages(messages, systemPrompt);
+  finalizeBuddyMessages(messages, effectiveSystemPrompt);
 }

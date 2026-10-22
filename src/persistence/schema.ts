@@ -343,6 +343,8 @@ export const modelAliases = pgTable(
     tenantId: tenantRefRequired(),
     alias: text("alias").notNull(),
     targetModel: text("target_model").notNull(),
+    systemPrompt: text("system_prompt"),
+    promptStrategy: text("prompt_strategy").default("prepend"),
     ...timestampColumns(),
   },
   (t) => [uniqueIndex("model_aliases_tenant_alias_uidx").on(t.tenantId, t.alias)],

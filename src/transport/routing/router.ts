@@ -17,6 +17,7 @@ import {
   type EligibilityDecision,
   type RouteSnapshot,
   type RoutingRevision,
+  type AliasSubstrateConfig,
 } from "./route-model";
 import { candidateSupportsRequest, type RequiredCapability } from "../translation/capabilities";
 
@@ -215,6 +216,34 @@ export function resolveAliasTarget(
   } catch {
     return requested;
   }
+}
+
+/**
+ * Resolves prompt substrate/injection configuration attached to an alias.
+ * Searches the resolution chain so a virtual alias mapping to an upstream
+ * target returns the virtual alias's configured substrate.
+ */
+export function resolveAliasSubstrate(
+  snapshot: RouteSnapshot,
+  tenantId: string | null,
+  requested: string,
+  allowCliMappings = false,
+): AliasSubstrateConfig | undefined {
+  if (!tenantId || !snapshot.alias_substrates?.[tenantId]) return undefined;
+  const substrates = snapshot.alias_substrates[tenantId];
+  if (!substrates) return undefined;
+
+  if (substrates[requested]) return substrates[requested];
+
+  try {
+    const res = resolveAlias(requested, snapshot, tenantId, allowCliMappings);
+    for (const alias of res.chain) {
+      if (substrates[alias]) return substrates[alias];
+    }
+  } catch {
+    // on cycle or depth error, return direct match if any
+  }
+  return substrates[requested];
 }
 
 function aliasMapFor(

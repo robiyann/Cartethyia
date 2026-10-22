@@ -92,6 +92,8 @@ export async function runAttemptLoop<TResult, TAdapter>(
   const { state, deps, candidates, leaseSource } = input;
   let lastError: unknown = input.exhaustedError;
   const refreshedCandidates = new Set<string>();
+  const proxyRetriesByCandidate = new Map<string, number>();
+  const MAX_PROXY_FAILOVER_ATTEMPTS = 3;
   for (let index = 0; index < candidates.length; index += 1) {
     const candidate = candidates[index];
     if (!candidate) continue;
@@ -145,8 +147,18 @@ export async function runAttemptLoop<TResult, TAdapter>(
       const cancelled =
         state.abortController.signal.aborted ||
         (error instanceof GatewayError && error.code === "transport_closed");
+      const candidateKey = `${candidate.provider_id}:${candidate.provider_account_id ?? "global"}:${candidate.model_id}:${candidate.endpoint}`;
+      const retryable = isRetryableFailure(error);
+      const currentProxyRetries = proxyRetriesByCandidate.get(candidateKey) ?? 0;
+      const hasProxyFailover =
+        !cancelled &&
+        retryable &&
+        Boolean(networkPoolId) &&
+        Boolean(deps.poolSelector) &&
+        currentProxyRetries < MAX_PROXY_FAILOVER_ATTEMPTS;
+
       const terminalAttempt =
-        cancelled || !isRetryableFailure(error) || index === candidates.length - 1;
+        cancelled || !retryable || (index === candidates.length - 1 && !hasProxyFailover);
       await completeAttempt(state, {
         status: cancelled ? "cancelled" : "failed",
         providerId: candidate.provider_id,
@@ -179,10 +191,15 @@ export async function runAttemptLoop<TResult, TAdapter>(
       if (networkPoolId && !cancelled && deps.poolSelector && shouldCooldownPool(error)) {
         flagPoolCooldown(deps.poolSelector, deps.db, networkPoolId, candidate.provider_id, error);
       }
+      if (hasProxyFailover) {
+        proxyRetriesByCandidate.set(candidateKey, currentProxyRetries + 1);
+        index -= 1;
+        retryDelayMs = fallbackRetryDelayMs(currentProxyRetries);
+        continue;
+      }
       // A 403 can be a deterministic provider policy rejection, not an
       // invalid OAuth credential. Only the evidence-based classifier above
       // may trigger a refresh.
-      const candidateKey = `${candidate.provider_id}:${candidate.provider_account_id ?? "global"}:${candidate.model_id}:${candidate.endpoint}`;
       const authInvalidated = isOAuthCredentialInvalidated(error);
       if (
         !cancelled &&

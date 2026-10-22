@@ -157,7 +157,7 @@ describe("WorkBuddy integration", () => {
     workbuddyPrePayload(payload, request(), candidate());
     expect(payload.stream).toBe(true);
     expect(payload.messages).toEqual([
-      { role: "system", content: "You are WorkBuddy AI." },
+      { role: "system", content: "client system" },
       { role: "user", content: [{ type: "text", text: "hello" }] },
     ]);
   });
